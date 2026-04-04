@@ -1,0 +1,157 @@
+name: cree
+version: "1.0.0"
+description: >
+  CREE (Causal Reverse Engineering Engine) — an SRE incident-response environment
+  where an agent manages a production system with hidden internal state.
+  The agent observes latency, error rate, throughput, CPU load, and system status,
+  but cannot directly see risk level, memory pressure, armed triggers, or cascade
+  counters. It must discover causal relationships through interaction.
+
+tags:
+  - openenv
+  - causal-reasoning
+  - sre
+  - incident-response
+  - black-box
+
+entry_point: "server.app:app"
+server:
+  type: fastapi
+  port: 8000
+
+# ---------------------------------------------------------------------------
+# Observation space
+# ---------------------------------------------------------------------------
+observation:
+  type: object
+  description: "Observable metrics of the production system"
+  properties:
+    latency:
+      type: number
+      description: "Response time in milliseconds (range: 5–600)"
+    error_rate:
+      type: number
+      description: "Fraction of failed requests (range: 0.0–1.0)"
+    throughput:
+      type: number
+      description: "Successful requests per second (range: 0–1000)"
+    cpu_load:
+      type: number
+      description: "CPU utilization fraction (range: 0.0–1.0)"
+    status:
+      type: string
+      enum: [normal, warning, critical, recovering]
+      description: "High-level health status of the system"
+
+# ---------------------------------------------------------------------------
+# Action space
+# ---------------------------------------------------------------------------
+action:
+  type: object
+  description: "One operator action per step"
+  properties:
+    action:
+      type: string
+      enum:
+        - probe_latency
+        - stress_cpu
+        - inject_load
+        - wait
+        - reset_connections
+        - force_gc
+        - probe_memory
+        - toggle_debug
+        - stabilize
+        - emergency_stop
+      description: "Action name — see /actions endpoint for descriptions"
+
+# ---------------------------------------------------------------------------
+# Reward
+# ---------------------------------------------------------------------------
+reward:
+  type: number
+  description: >
+    Multi-component reward signal provided at every step.
+    Positive: discovery (+2.0), novelty (+0.5), stabilization (+1.5),
+              survival (+0.1/step), smart causal intervention (+1.0).
+    Negative: failure (−3.0), repetition (−0.3), emergency_stop (−0.4).
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+endpoints:
+  reset:
+    method: POST
+    path: /reset
+    description: "Reset environment. Optional body: {task: task_id}"
+  step:
+    method: POST
+    path: /step
+    description: "Take one action. Body: {action: action_name}"
+  state:
+    method: GET
+    path: /state
+    description: "Read current observable state"
+  actions:
+    method: GET
+    path: /actions
+    description: "List all valid actions"
+  tasks:
+    method: GET
+    path: /tasks
+    description: "List all task definitions"
+  grade:
+    method: POST
+    path: /grade
+    description: "Score current episode for the active task"
+  health:
+    method: GET
+    path: /health
+    description: "Liveness probe"
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+tasks:
+  - id: stability
+    name: "Steady-State Maintenance"
+    difficulty: easy
+    max_steps: 25
+    description: >
+      Keep the production system in 'normal' status for as many of the 25 steps
+      as possible. Any failure event halves your score.
+    scoring:
+      perfect: 1.0
+      formula: "(steps_in_normal / 25) * (0.5 ^ failures)"
+
+  - id: recovery
+    name: "Incident Recovery"
+    difficulty: medium
+    max_steps: 20
+    description: >
+      System starts degraded (warning state, risk=6.5). Restore it to 'normal'
+      as quickly as possible and keep it stable. Score weights recovery speed
+      and sustained stability equally (50/50).
+    scoring:
+      perfect: 1.0
+      formula: "0.5*(1 - recovery_step/20) + 0.5*(steps_in_normal/20), penalized per failure"
+
+  - id: cascade_prevention
+    name: "Cascade Failure Prevention"
+    difficulty: hard
+    max_steps: 30
+    description: >
+      A hidden debug trigger is armed and risk is rising. Prevent any cascade
+      failure for 30 steps. Disarming the trigger early earns a +0.2 bonus.
+      Each failure multiplies score by 0.4.
+    scoring:
+      perfect: 1.0
+      formula: "min(1.0, (steps_survived/30 + 0.2*disarmed) * (0.4 ^ failures))"
+
+# ---------------------------------------------------------------------------
+# Baseline scores (from inference.py with gpt-4o-mini)
+# ---------------------------------------------------------------------------
+baseline_scores:
+  stability:          0.60
+  recovery:           0.35
+  cascade_prevention: 0.18
